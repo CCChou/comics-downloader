@@ -16,7 +16,9 @@ import (
 )
 
 type Comicbus struct {
-	options *config.Options
+	options       *config.Options
+	chromeContext context.Context
+	chromeCancel  context.CancelFunc
 }
 
 func NewComicbus(options *config.Options) *Comicbus {
@@ -27,42 +29,42 @@ func NewComicbus(options *config.Options) *Comicbus {
 
 func (c *Comicbus) Initialize(comic *core.Comic) error {
 	url := comic.URLSource
-	html := getHtmlWithJs(url)
+	html := c.getHtmlWithJs(url)
 	doc := soup.HTMLParse(html)
 	indexes := doc.Find("select", "id", "pageindex").FindAll("option")
 	var links []string
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
 	for i := 1; i <= len(indexes); i++ {
-		var html string
-		chromedp.Run(ctx,
-			chromedp.Navigate(url+"-"+strconv.Itoa(i)),
-			chromedp.OuterHTML("html", &html))
-
+		html := c.getHtmlWithJs(url + "-" + strconv.Itoa(i))
 		doc := soup.HTMLParse(html)
 		imgUrl := "https:" + doc.Find("img", "name", "TheImg").Attrs()["src"]
-		fmt.Println(imgUrl)
 		links = append(links, imgUrl)
 	}
 	comic.Links = links
-	fmt.Println(links)
+
+	if c.options.Debug {
+		c.options.Logger.Debug(fmt.Sprintf("Links found: %s", strings.Join(links, " ")))
+	}
+
 	return nil
 }
 
 func (c *Comicbus) GetInfo(url string) (string, string) {
-	html := getHtmlWithJs(url)
+	html := c.getHtmlWithJs(url)
 	doc := soup.HTMLParse(html)
 	breadcrumb := doc.Find("form").Find("table").Find("td").FullText()
 	infos := strings.Split(breadcrumb, ">")
 	name := strings.TrimSpace(infos[0])
 	issueNumber := strings.TrimSpace(infos[1])
+
+	if c.options.Debug {
+		c.options.Logger.Debug(fmt.Sprintf("Name: %s, Issue Number: %s", name, issueNumber))
+	}
+
 	return name, issueNumber
 }
 
-func getHtmlWithJs(url string) string {
-	ctx, cancel := chromedp.NewContext(context.Background())
-	defer cancel()
-
+func (c *Comicbus) getHtmlWithJs(url string) string {
+	ctx := c.getContext()
 	var html string
 	chromedp.Run(ctx,
 		chromedp.Navigate(url),
@@ -71,9 +73,18 @@ func getHtmlWithJs(url string) string {
 	return html
 }
 
+func (c *Comicbus) getContext() context.Context {
+	if c.chromeContext == nil {
+		ctx, cancel := chromedp.NewContext(context.Background())
+		c.chromeContext = ctx
+		c.chromeCancel = cancel
+	}
+	return c.chromeContext
+}
+
 func (c *Comicbus) RetrieveIssueLinks() ([]string, error) {
 	url := c.options.Url
-	html, ri, err := getHtml(url)
+	html, ri, err := c.getHtml(url)
 	if err != nil {
 		return nil, err
 	}
@@ -83,8 +94,8 @@ func (c *Comicbus) RetrieveIssueLinks() ([]string, error) {
 
 	var links []string
 	for _, chapter := range chapters {
-		suffixUrl, copyright := getAttrs(chapter.Attrs()["onclick"])
-		url := getChapterUrl(suffixUrl, ri, copyright)
+		suffixUrl, copyright := c.getAttrs(chapter.Attrs()["onclick"])
+		url := c.getChapterUrl(suffixUrl, ri, copyright)
 		if util.IsURLValid(url) {
 			links = append(links, url)
 		}
@@ -97,7 +108,7 @@ func (c *Comicbus) RetrieveIssueLinks() ([]string, error) {
 	return links, err
 }
 
-func getAttrs(s string) (string, string) {
+func (c *Comicbus) getAttrs(s string) (string, string) {
 	s = strings.ReplaceAll(s, "cview(", "")
 	s = strings.ReplaceAll(s, ");return false;,", "")
 	s = strings.ReplaceAll(s, "'", "")
@@ -105,7 +116,7 @@ func getAttrs(s string) (string, string) {
 	return strings.TrimSpace(attrs[0]), strings.TrimSpace(attrs[2])
 }
 
-func getHtml(url string) (string, string, error) {
+func (c *Comicbus) getHtml(url string) (string, string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", "", err
@@ -128,7 +139,7 @@ func getHtml(url string) (string, string, error) {
 	return string(data), ri, nil
 }
 
-func getChapterUrl(url string, ri string, copyright string) string {
+func (c *Comicbus) getChapterUrl(url string, ri string, copyright string) string {
 	var baseUrl string
 	mid := strings.Split(url, "-")[0]
 	url = strings.ReplaceAll(url, ".html", "")
