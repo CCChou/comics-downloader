@@ -101,6 +101,8 @@ func LoadComicFromSource(options *config.Options) ([]*core.Comic, error) {
 		base = NewMangatown(options)
 	case "mangadex.cc", "mangadex.org":
 		base = NewMangadex(options)
+	case "www.comicbus.com":
+		base = NewComicbus(options)
 	default:
 		err = fmt.Errorf("source unknown")
 		return collection, err

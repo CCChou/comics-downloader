@@ -5,6 +5,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// TODO Add new supported site
 // SupportedSites are the supported sites.
 var SupportedSites = map[string]map[string]bool{
 	"www.comicextra.com":  {"isDisabled": false},
@@ -14,6 +15,7 @@ var SupportedSites = map[string]map[string]bool{
 	"www.mangahere.cc":    {"isDisabled": false},
 	"mangadex.cc":         {"isDisabled": false},
 	"mangadex.org":        {"isDisabled": false},
+	"www.comicbus.com":        {"isDisabled": false},
 }
 
 // DetectComic will look for the url source to check if a source is supported.
